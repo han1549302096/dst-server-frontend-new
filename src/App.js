@@ -1,17 +1,46 @@
 // App.js
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Paper, TextField, Grid } from '@mui/material';
+import { 
+  Container, Typography, Box, Button, Paper, TextField, Grid, CircularProgress,
+  ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, IconButton
+} from '@mui/material';
+import { 
+  Refresh as RefreshIcon,
+  PlayArrow as StartIcon,
+  Stop as StopIcon,
+  CloudUpload as UpdateIcon,
+  Build as InstallIcon
+} from '@mui/icons-material';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000'; // 替换为您的API地址
-const API_KEY = '123'; // 替换为您的API密钥
+const API_BASE_URL = 'http://192.168.1.17:5000';
+const API_KEY = '123';
 
 axios.defaults.headers.common['X-API-Key'] = API_KEY;
+
+// Create a custom theme
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#2196f3', // A nice blue color
+    },
+    secondary: {
+      main: '#ff9800', // An orange color for contrast
+    },
+    background: {
+      default: '#f5f5f5', // Light grey background
+    },
+  },
+});
 
 function App() {
   const [status, setStatus] = useState({ overworld: '未知', caves: '未知' });
   const [config, setConfig] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [actionLoading, setActionLoading] = useState({});
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     fetchStatus();
@@ -19,25 +48,32 @@ function App() {
   }, []);
 
   const fetchStatus = async () => {
+    setLoadingStatus(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/status`);
       setStatus(response.data);
     } catch (error) {
       console.error('获取状态时出错:', error);
+      setMessage('获取状态时出错: ' + error.message);
     }
+    setLoadingStatus(false);
   };
 
   const fetchConfig = async () => {
+    setLoadingConfig(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/config`);
       setConfig(response.data);
     } catch (error) {
       console.error('获取配置时出错:', error);
+      setMessage('获取配置时出错: ' + error.message);
     }
+    setLoadingConfig(false);
   };
 
   const handleAction = async (action, shard = '') => {
-    setLoading(true);
+    setActionLoading(prevState => ({ ...prevState, [`${action}-${shard}`]: true }));
+    setMessage('');
     try {
       let response;
       if (action === 'install' || action === 'update') {
@@ -45,12 +81,13 @@ function App() {
       } else {
         response = await axios.post(`${API_BASE_URL}/${action}/${shard}`);
       }
-      console.log(response.data.message);
+      setMessage(response.data.message);
       fetchStatus();
     } catch (error) {
       console.error(`${action}过程中出错:`, error);
+      setMessage(`${action}过程中出错: ${error.response ? error.response.data.message : error.message}`);
     }
-    setLoading(false);
+    setActionLoading(prevState => ({ ...prevState, [`${action}-${shard}`]: false }));
   };
 
   const handleConfigChange = (section, key, value) => {
@@ -64,86 +101,195 @@ function App() {
   };
 
   const saveConfig = async () => {
+    setLoading(true);
+    setMessage('');
     try {
       await axios.post(`${API_BASE_URL}/config`, config);
-      console.log('配置保存成功');
+      setMessage('配置保存成功');
     } catch (error) {
       console.error('保存配置时出错:', error);
+      setMessage(`保存配置时出错: ${error.response ? error.response.data.message : error.message}`);
     }
+    setLoading(false);
   };
 
   return (
-    <Container maxWidth="lg">
-      <Typography variant="h3" component="h1" gutterBottom>
-        饥荒联机版服务器管理器
-      </Typography>
-
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h5" gutterBottom>服务器状态</Typography>
-              <Typography>主世界: {status.overworld}</Typography>
-              <Typography>洞穴: {status.caves}</Typography>
-            </Box>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h5" gutterBottom>服务器操作</Typography>
-              <Box display="flex" flexDirection="column" gap={2}>
-                <Button variant="contained" color="primary" onClick={() => handleAction('install')} disabled={loading}>
-                  安装服务器
-                </Button>
-                <Button variant="contained" color="secondary" onClick={() => handleAction('update')} disabled={loading}>
-                  更新服务器
-                </Button>
-                <Button variant="contained" onClick={() => handleAction('start', 'overworld')} disabled={loading}>
-                  启动主世界
-                </Button>
-                <Button variant="contained" onClick={() => handleAction('start', 'caves')} disabled={loading}>
-                  启动洞穴
-                </Button>
-                <Button variant="contained" onClick={() => handleAction('stop', 'overworld')} disabled={loading}>
-                  停止主世界
-                </Button>
-                <Button variant="contained" onClick={() => handleAction('stop', 'caves')} disabled={loading}>
-                  停止洞穴
-                </Button>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AppBar position="static" color="primary">
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            饥荒联机版服务器管理器
+          </Typography>
+          <IconButton color="inherit" onClick={fetchStatus} disabled={loadingStatus}>
+            <RefreshIcon />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        {message && (
+          <Box mb={2}>
+            <Paper elevation={3}>
+              <Box p={2} bgcolor={message.includes('错误') ? 'error.light' : 'success.light'}>
+                <Typography variant="body1">{message}</Typography>
               </Box>
-            </Box>
-          </Paper>
-        </Grid>
+            </Paper>
+          </Box>
+        )}
 
-        <Grid item xs={12}>
-          <Paper elevation={3}>
-            <Box p={3}>
-              <Typography variant="h5" gutterBottom>服务器配置</Typography>
-              {Object.entries(config).map(([section, options]) => (
-                <Box key={section} mb={2}>
-                  <Typography variant="h6">{section}</Typography>
-                  {Object.entries(options).map(([key, value]) => (
-                    <TextField
-                      key={`${section}-${key}`}
-                      label={key}
-                      value={value}
-                      onChange={(e) => handleConfigChange(section, key, e.target.value)}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Paper elevation={3}>
+              <Box p={3}>
+                <Typography variant="h5" gutterBottom>服务器状态</Typography>
+                {loadingStatus ? (
+                  <CircularProgress />
+                ) : (
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.overworld === '运行中' ? 'success.light' : 'error.light' }}>
+                        <Typography variant="h6">主世界</Typography>
+                        <Typography variant="body1">{status.overworld}</Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.caves === '运行中' ? 'success.light' : 'error.light' }}>
+                        <Typography variant="h6">洞穴</Typography>
+                        <Typography variant="body1">{status.caves}</Typography>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Paper elevation={3}>
+              <Box p={3}>
+                <Typography variant="h5" gutterBottom>服务器操作</Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <Button
                       fullWidth
-                      margin="normal"
-                    />
-                  ))}
-                </Box>
-              ))}
-              <Button variant="contained" color="primary" onClick={saveConfig}>
-                保存配置
-              </Button>
-            </Box>
-          </Paper>
+                      variant="contained"
+                      color="primary"
+                      startIcon={<InstallIcon />}
+                      onClick={() => handleAction('install')}
+                      disabled={actionLoading['install-']}
+                    >
+                      {actionLoading['install-'] ? <CircularProgress size={24} /> : '安装服务器'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="secondary"
+                      startIcon={<UpdateIcon />}
+                      onClick={() => handleAction('update')}
+                      disabled={actionLoading['update-']}
+                    >
+                      {actionLoading['update-'] ? <CircularProgress size={24} /> : '更新服务器'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="success"
+                      startIcon={<StartIcon />}
+                      onClick={() => handleAction('start', 'overworld')}
+                      disabled={actionLoading['start-overworld']}
+                    >
+                      {actionLoading['start-overworld'] ? <CircularProgress size={24} /> : '启动主世界'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="success"
+                      startIcon={<StartIcon />}
+                      onClick={() => handleAction('start', 'caves')}
+                      disabled={actionLoading['start-caves']}
+                    >
+                      {actionLoading['start-caves'] ? <CircularProgress size={24} /> : '启动洞穴'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="error"
+                      startIcon={<StopIcon />}
+                      onClick={() => handleAction('stop', 'overworld')}
+                      disabled={actionLoading['stop-overworld']}
+                    >
+                      {actionLoading['stop-overworld'] ? <CircularProgress size={24} /> : '停止主世界'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="error"
+                      startIcon={<StopIcon />}
+                      onClick={() => handleAction('stop', 'caves')}
+                      disabled={actionLoading['stop-caves']}
+                    >
+                      {actionLoading['stop-caves'] ? <CircularProgress size={24} /> : '停止洞穴'}
+                    </Button>
+                  </Grid>
+                </Grid>
+              </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper elevation={3}>
+              <Box p={3}>
+                <Typography variant="h5" gutterBottom>服务器配置</Typography>
+                {loadingConfig ? (
+                  <CircularProgress />
+                ) : (
+                  <>
+                    {Object.entries(config).map(([section, options]) => (
+                      <Box key={section} mb={2}>
+                        <Typography variant="h6">{section}</Typography>
+                        <Grid container spacing={2}>
+                          {Object.entries(options).map(([key, value]) => (
+                            <Grid item xs={12} sm={6} key={`${section}-${key}`}>
+                              <TextField
+                                label={key}
+                                value={value}
+                                onChange={(e) => handleConfigChange(section, key, e.target.value)}
+                                fullWidth
+                                margin="normal"
+                                variant="outlined"
+                              />
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Box>
+                    ))}
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={saveConfig}
+                      disabled={loading}
+                      startIcon={loading ? <CircularProgress size={24} /> : null}
+                    >
+                      保存配置
+                    </Button>
+                  </>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
         </Grid>
-      </Grid>
-    </Container>
+      </Container>
+    </ThemeProvider>
   );
 }
 
