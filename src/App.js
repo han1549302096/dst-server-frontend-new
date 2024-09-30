@@ -1,8 +1,7 @@
-// App.js
 import React, { useState, useEffect } from 'react';
 import { 
   Container, Typography, Box, Button, Paper, TextField, Grid, CircularProgress,
-  ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, IconButton
+  ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, IconButton, List, ListItem, ListItemText
 } from '@mui/material';
 import { 
   Refresh as RefreshIcon,
@@ -13,22 +12,21 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://192.168.1.17:5000';
+const API_BASE_URL = 'http://192.168.150.138:5000';
 const API_KEY = '123';
 
 axios.defaults.headers.common['X-API-Key'] = API_KEY;
 
-// Create a custom theme
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#2196f3', // A nice blue color
+      main: '#2196f3',
     },
     secondary: {
-      main: '#ff9800', // An orange color for contrast
+      main: '#ff9800',
     },
     background: {
-      default: '#f5f5f5', // Light grey background
+      default: '#f5f5f5',
     },
   },
 });
@@ -36,6 +34,7 @@ const theme = createTheme({
 function App() {
   const [status, setStatus] = useState({ overworld: '未知', caves: '未知' });
   const [config, setConfig] = useState({});
+  const [mods, setMods] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
@@ -45,6 +44,7 @@ function App() {
   useEffect(() => {
     fetchStatus();
     fetchConfig();
+    fetchMods();
   }, []);
 
   const fetchStatus = async () => {
@@ -71,6 +71,16 @@ function App() {
     setLoadingConfig(false);
   };
 
+  const fetchMods = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/mods`);
+      setMods(response.data.mods);
+    } catch (error) {
+      console.error('获取MOD列表时出错:', error);
+      setMessage('获取MOD列表时出错: ' + error.message);
+    }
+  };
+
   const handleAction = async (action, shard = '') => {
     setActionLoading(prevState => ({ ...prevState, [`${action}-${shard}`]: true }));
     setMessage('');
@@ -78,6 +88,12 @@ function App() {
       let response;
       if (action === 'install' || action === 'update') {
         response = await axios.post(`${API_BASE_URL}/${action}`);
+      } else if (action === 'start_all') {
+        await axios.post(`${API_BASE_URL}/start/overworld`);
+        response = await axios.post(`${API_BASE_URL}/start/caves`);
+      } else if (action === 'stop_all') {
+        await axios.post(`${API_BASE_URL}/stop/overworld`);
+        response = await axios.post(`${API_BASE_URL}/stop/caves`);
       } else {
         response = await axios.post(`${API_BASE_URL}/${action}/${shard}`);
       }
@@ -147,15 +163,15 @@ function App() {
                 ) : (
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
-                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.overworld === '运行中' ? 'success.light' : 'error.light' }}>
+                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.地上世界 === '运行中' ? 'success.light' : 'error.light' }}>
                         <Typography variant="h6">主世界</Typography>
-                        <Typography variant="body1">{status.overworld}</Typography>
+                        <Typography variant="body1">{status.地上世界}</Typography>
                       </Paper>
                     </Grid>
                     <Grid item xs={6}>
-                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.caves === '运行中' ? 'success.light' : 'error.light' }}>
+                      <Paper elevation={1} sx={{ p: 2, bgcolor: status.洞穴 === '运行中' ? 'success.light' : 'error.light' }}>
                         <Typography variant="h6">洞穴</Typography>
-                        <Typography variant="body1">{status.caves}</Typography>
+                        <Typography variant="body1">{status.洞穴}</Typography>
                       </Paper>
                     </Grid>
                   </Grid>
@@ -241,7 +257,49 @@ function App() {
                       {actionLoading['stop-caves'] ? <CircularProgress size={24} /> : '停止洞穴'}
                     </Button>
                   </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="success"
+                      startIcon={<StartIcon />}
+                      onClick={() => handleAction('start_all')}
+                      disabled={actionLoading['start_all-']}
+                    >
+                      {actionLoading['start_all-'] ? <CircularProgress size={24} /> : '启动所有'}
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="error"
+                      startIcon={<StopIcon />}
+                      onClick={() => handleAction('stop_all')}
+                      disabled={actionLoading['stop_all-']}
+                    >
+                      {actionLoading['stop_all-'] ? <CircularProgress size={24} /> : '停止所有'}
+                    </Button>
+                  </Grid>
                 </Grid>
+              </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper elevation={3}>
+              <Box p={3}>
+                <Typography variant="h5" gutterBottom>MOD列表</Typography>
+                <List>
+                  {Object.entries(mods).map(([modId, modConfig]) => (
+                    <ListItem key={modId}>
+                      <ListItemText 
+                        primary={modId} 
+                        secondary={`启用: ${modConfig.enabled ? '是' : '否'}`} 
+                      />
+                    </ListItem>
+                  ))}
+                </List>
               </Box>
             </Paper>
           </Grid>

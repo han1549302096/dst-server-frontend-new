@@ -24,7 +24,42 @@ CONFIG_PATH = f'{SERVER_ROOT}/.klei/DoNotStarveTogether/MyDediServer'
 
 # 简单的身份验证
 API_KEY = "123"  # 请更改为安全的API密钥
+# 配置字段映射
+config_mapping = {
+    'GAMEPLAY': '游戏设置',
+    'game_mode': '游戏模式',
+    'max_players': '最大玩家数',
+    'pvp': '玩家对战',
+    'pause_when_empty': '无人暂停',
+    'vote_enabled': '允许投票',
+    'vote_kick_enabled': '允许投票踢人',
+    'NETWORK': '网络设置',
+    'lan_only_cluster': '仅局域网',
+    'cluster_intention': '服务器类型',
+    'cluster_password': '服务器密码',
+    'cluster_description': '服务器描述',
+    'cluster_name': '服务器名称',
+    'offline_cluster': '离线模式',
+    'cluster_language': '服务器语言',
+    'whitelist_slots': '预留位置',
+    'tick_rate': '更新率',
+    'MISC': '其他设置',
+    'console_enabled': '控制台启用',
+    'max_snapshots': '最大快照数',
+    'SHARD': '分片设置',
+    'shard_enabled': '分片启用',
+    'bind_ip': '绑定IP',
+    'master_ip': '主分片IP',
+    'master_port': '主分片端口',
+    'cluster_key': '集群密钥',
+    'STEAM': 'Steam设置',
+    'steam_group_only': '仅Steam组成员',
+    'steam_group_id': 'Steam组ID',
+    'steam_group_admins': 'Steam组管理员权限'
+}
 
+# 反向映射
+reverse_mapping = {v: k for k, v in config_mapping.items()}
 def require_api_key(view_function):
     @wraps(view_function)
     def decorated_function(*args, **kwargs):
@@ -37,8 +72,13 @@ def require_api_key(view_function):
             return jsonify({"状态": "错误", "消息": "无效的API密钥"}), 401
     return decorated_function
 
-def run_command(command):
+def run_command(command, use_sudo=False, user='dst'):
     try:
+        if use_sudo:
+            command = f"sudo {command}"
+        elif user != 'root':
+            command = f"sudo -u {user} {command}"
+        
         logger.info(f"执行命令: {command}")
         process = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         logger.info(f"命令输出: {process.stdout}")
@@ -50,8 +90,8 @@ def run_command(command):
 def ensure_directory(path, owner='dst'):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
-    os.chown(path, pwd.getpwnam(owner).pw_uid, pwd.getpwnam(owner).pw_gid)
-    os.chmod(path, 0o755)
+    run_command(f"chown {owner}:{owner} {path}", use_sudo=True)
+    run_command(f"chmod 755 {path}", use_sudo=True)
 
 def install_dependencies():
     logger.info("正在安装依赖项...")
@@ -60,7 +100,7 @@ def install_dependencies():
         "apt-get install -y lib32gcc1 lib32stdc++6 libcurl4-gnutls-dev:i386 screen"
     ]
     for cmd in commands:
-        output, error = run_command(cmd)
+        output, error = run_command(cmd, use_sudo=True)
         if error:
             logger.error(f"安装依赖项时出错: {error}")
             return False
@@ -68,7 +108,7 @@ def install_dependencies():
 
 def setup_user():
     logger.info("正在设置DST用户...")
-    output, error = run_command("id -u dst || useradd -m -d /home/dst dst")
+    output, error = run_command("id -u dst || useradd -m -d /home/dst dst", use_sudo=True)
     if error:
         logger.error(f"设置用户时出错: {error}")
         return False
@@ -84,7 +124,7 @@ def install_steamcmd():
         f"rm {SERVER_ROOT}/steamcmd_linux.tar.gz"
     ]
     for cmd in commands:
-        output, error = run_command(cmd)
+        output, error = run_command(cmd, user='dst')
         if error:
             logger.error(f"安装SteamCMD时出错: {error}")
             return False
@@ -97,12 +137,12 @@ def install_dst_server():
     
     try:
         # 确保目标目录存在并设置正确的权限
-        os.makedirs(SERVER_PATH, exist_ok=True)
-        os.chown(SERVER_PATH, pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
+        run_command(f"mkdir -p {SERVER_PATH}", use_sudo=True)
+        run_command(f"chown dst:dst {SERVER_PATH}", use_sudo=True)
         
         # 设置 SteamCMD 相关文件和目录的权限
         steamcmd_files = [
-            STEAMCMD_PATH,  # steamcmd.sh
+            STEAMCMD_PATH,
             os.path.join(os.path.dirname(STEAMCMD_PATH), 'linux32', 'steamcmd'),
             os.path.join(os.path.dirname(STEAMCMD_PATH), 'linux32', 'steamerrorreporter'),
             os.path.join(os.path.dirname(STEAMCMD_PATH), 'linux32', 'libstdc++.so.6'),
@@ -111,8 +151,8 @@ def install_dst_server():
         
         for file_path in steamcmd_files:
             if os.path.exists(file_path):
-                os.chown(file_path, pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
-                os.chmod(file_path, 0o755)
+                run_command(f"chown dst:dst {file_path}", use_sudo=True)
+                run_command(f"chmod 755 {file_path}", use_sudo=True)
         
         # 确保 SteamCMD 目录有正确的权限
         steamcmd_dir = os.path.dirname(STEAMCMD_PATH)
@@ -120,35 +160,14 @@ def install_dst_server():
         
         for dir_path in [steamcmd_dir, linux32_dir]:
             if os.path.exists(dir_path):
-                os.chown(dir_path, pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
-                os.chmod(dir_path, 0o755)
+                run_command(f"chown dst:dst {dir_path}", use_sudo=True)
+                run_command(f"chmod 755 {dir_path}", use_sudo=True)
         
-        # 使用su命令切换到dst用户运行SteamCMD
-        full_command = f"su - dst -c '{command}'"
+        # 使用dst用户运行SteamCMD
+        output, error = run_command(command, user='dst')
         
-        process = subprocess.Popen(
-            full_command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
-        
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                logger.info(output.strip())
-        
-        returncode = process.poll()
-        
-        _, stderr = process.communicate()
-        if stderr:
-            logger.error(f"安装DST服务器时有错误输出: {stderr}")
-        
-        if returncode != 0:
-            logger.error(f"安装DST服务器失败，返回码: {returncode}")
+        if error:
+            logger.error(f"安装DST服务器时出错: {error}")
             return False
         
         logger.info("DST服务器安装成功完成")
@@ -167,59 +186,59 @@ def configure_server():
     config = configparser.ConfigParser()
 
     # cluster.ini
-    config['游戏设置'] = {
-        '游戏模式': 'survival',
-        '最大玩家数': '10',
-        '玩家对战': 'false',
-        '无人暂停': 'true'
+    config['GAMEPLAY'] = {
+        'game_mode': 'survival',
+        'max_players': '10',
+        'pvp': 'false',
+        'pause_when_empty': 'true'
     }
-    config['网络设置'] = {
-        '服务器名称': '我的DST服务器',
-        '服务器描述': '欢迎来到我的服务器！',
-        '服务器密码': '',
-        '服务器类型': 'social'
+    config['NETWORK'] = {
+        'cluster_name': '我的DST服务器',
+        'cluster_description': '欢迎来到我的服务器！',
+        'cluster_password': '',
+        'cluster_intention': 'social'
     }
-    config['其他设置'] = {'控制台启用': 'true'}
-    config['分片设置'] = {
-        '分片启用': 'true',
-        '绑定IP': '127.0.0.1',
-        '主分片IP': '127.0.0.1',
-        '主分片端口': '11001',
-        '集群密钥': 'defaultpass'
+    config['MISC'] = {'console_enabled': 'true'}
+    config['SHARD'] = {
+        'shard_enabled': 'true',
+        'bind_ip': '127.0.0.1',
+        'master_ip': '127.0.0.1',
+        'master_port': '10888',
+        'cluster_key': 'defaultPass'
     }
 
     with open(f'{CONFIG_PATH}/cluster.ini', 'w') as configfile:
         config.write(configfile)
-    os.chown(f'{CONFIG_PATH}/cluster.ini', pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
+    run_command(f"chown dst:dst {CONFIG_PATH}/cluster.ini", use_sudo=True)
 
     # server.ini for Overworld
     config = configparser.ConfigParser()
-    config['网络设置'] = {'服务器端口': '10999'}
-    config['分片设置'] = {'是否为主分片': 'true'}
+    config['NETWORK'] = {'server_port': '10998'}
+    config['SHARD'] = {'is_master': 'true'}
     config['STEAM'] = {
-        '主服务器端口': '12346',
-        '身份验证端口': '12345'
+        'master_server_port': '27016',
+        'authentication_port': '8766'
     }
 
     with open(f'{CONFIG_PATH}/Master/server.ini', 'w') as configfile:
         config.write(configfile)
-    os.chown(f'{CONFIG_PATH}/Master/server.ini', pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
+    run_command(f"chown dst:dst {CONFIG_PATH}/Master/server.ini", use_sudo=True)
 
     # server.ini for Caves
     config = configparser.ConfigParser()
-    config['网络设置'] = {'服务器端口': '11000'}
-    config['分片设置'] = {
-        '是否为主分片': 'false',
-        '分片名称': 'Caves'
+    config['NETWORK'] = {'server_port': '10999'}
+    config['SHARD'] = {
+        'is_master': 'false',
+        'name': 'Caves'
     }
     config['STEAM'] = {
-        '主服务器端口': '12348',
-        '身份验证端口': '12347'
+        'master_server_port': '27017',
+        'authentication_port': '8767'
     }
 
     with open(f'{CONFIG_PATH}/Caves/server.ini', 'w') as configfile:
         config.write(configfile)
-    os.chown(f'{CONFIG_PATH}/Caves/server.ini', pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
+    run_command(f"chown dst:dst {CONFIG_PATH}/Caves/server.ini", use_sudo=True)
 
     return True
 
@@ -235,41 +254,158 @@ cd /home/dst/server_dst/bin
 ./dontstarve_dedicated_server_nullrenderer -console -cluster MyDediServer -shard Caves
 ''',
         'restart.sh': '''#!/bin/bash
-screen -dr dst_server1 -X -S quit
+screen -S dst_server1 -X quit > /dev/null 2>&1
 cd /home/dst/server_dst/bin
-screen -dmS dst_server1 sh start.sh
+screen -dmS dst_server1 ./start.sh
 ''',
         'restart2.sh': '''#!/bin/bash
-screen -dr dst_server2 -X -S quit
+screen -S dst_server2 -X quit > /dev/null 2>&1
 cd /home/dst/server_dst/bin
-screen -dmS dst_server2 sh start2.sh
+screen -dmS dst_server2 ./start2.sh
 ''',
         'update.sh': '''#!/bin/bash
-screen -dr dst_server1 -X quit
-screen -dr dst_server2 -X quit
+screen -S dst_server1 -X quit > /dev/null 2>&1
+screen -S dst_server2 -X quit > /dev/null 2>&1
 cd /home/dst
 ./steamcmd.sh +login anonymous +force_install_dir /home/dst/server_dst +app_update 343050 validate +quit
 sleep 10
-sh /home/dst/server_dst/bin/restart.sh
-sh /home/dst/server_dst/bin/restart2.sh
+bash /home/dst/server_dst/bin/restart.sh
+bash /home/dst/server_dst/bin/restart2.sh
+''',
+        'start_all.sh': '''#!/bin/bash
+bash /home/dst/server_dst/bin/restart.sh
+bash /home/dst/server_dst/bin/restart2.sh
+''',
+        'stop_all.sh': '''#!/bin/bash
+screen -S dst_server1 -X quit > /dev/null 2>&1
+screen -S dst_server2 -X quit > /dev/null 2>&1
 '''
     }
-    
+        
     for script_name, script_content in scripts.items():
         script_path = f"{SERVER_PATH}/bin/{script_name}"
         with open(script_path, 'w') as f:
             f.write(script_content)
-        os.chmod(script_path, 0o755)
-        os.chown(script_path, pwd.getpwnam('dst').pw_uid, pwd.getpwnam('dst').pw_gid)
+        run_command(f"chmod 755 {script_path}", use_sudo=True)
+        run_command(f"chown dst:dst {script_path}", use_sudo=True)
     
     logger.info("Shell脚本设置完成")
     return True
 
+
+
+
+def parse_lua_table(content):
+    def parse_value(value):
+        value = value.strip()
+        if value == "true":
+            return True
+        elif value == "false":
+            return False
+        elif value.isdigit():
+            return int(value)
+        elif value.replace(".", "").isdigit():
+            return float(value)
+        else:
+            return value.strip('"')
+
+    result = {}
+    current_table = result
+    table_stack = []
+    current_key = None
+
+    for line in content.split('\n'):
+        line = line.strip()
+        if line.startswith('[') and line.endswith('] = {'):
+            key = line[1:-4].strip('[]" ')
+            current_table[key] = {}
+            table_stack.append((current_table, current_key))
+            current_table = current_table[key]
+            current_key = None
+        elif line == '},':
+            if table_stack:
+                current_table, current_key = table_stack.pop()
+        elif '=' in line:
+            key, value = line.split('=', 1)
+            key = key.strip('[] "')
+            value = value.strip('," ')
+            if value == '{':
+                current_table[key] = {}
+                table_stack.append((current_table, current_key))
+                current_table = current_table[key]
+                current_key = key
+            else:
+                current_table[key] = parse_value(value)
+
+    return result
+
+def read_modoverrides():
+    modoverrides_path = f"{CONFIG_PATH}/Master/modoverrides.lua"
+    if not os.path.exists(modoverrides_path):
+        return {}
+    
+    with open(modoverrides_path, 'r') as f:
+        content = f.read()
+    
+    # 移除 'return' 并解析Lua表
+    content = content.replace('return', '').strip()
+    return parse_lua_table(content)
+
+def write_modoverrides(mods):
+    def lua_repr(value):
+        if isinstance(value, bool):
+            return str(value).lower()
+        elif isinstance(value, (int, float)):
+            return str(value)
+        elif isinstance(value, str):
+            return f'"{value}"'
+        else:
+            return str(value)
+
+    def format_table(table, indent=0):
+        lines = []
+        for key, value in table.items():
+            if isinstance(value, dict):
+                lines.append(f'{"  " * indent}["{key}"] = {{')
+                lines.extend(format_table(value, indent + 1))
+                lines.append(f'{"  " * indent}}},')
+            else:
+                lines.append(f'{"  " * indent}{key} = {lua_repr(value)},')
+        return lines
+
+    modoverrides_path = f"{CONFIG_PATH}/Master/modoverrides.lua"
+    
+    with open(modoverrides_path, 'w') as f:
+        f.write("return {\n")
+        f.write('\n'.join(format_table(mods, 1)))
+        f.write("}\n")
+
+def update_mod_configuration():
+    mods = read_modoverrides()
+    mod_setup_path = f"{SERVER_PATH}/mods/dedicated_server_mods_setup.lua"
+    
+    try:
+        with open(mod_setup_path, 'w') as f:
+            f.write("-- 这个文件由服务器自动生成，请勿手动修改\n\n")
+            for mod_id in mods.keys():
+                # 提取 workshop ID
+                workshop_id = mod_id.split('-')[-1]
+                f.write(f'ServerModSetup("{workshop_id}")\n')
+        
+        logger.info("MOD配置已更新")
+    except Exception as e:
+        logger.error(f"更新MOD配置时出错: {str(e)}")
+        raise
+
+# 修改start_server函数
 def start_server(shard):
     logger.info(f"正在启动{shard}服务器...")
-    script_name = 'start.sh' if shard == 'overworld' else 'start2.sh'
+    
+    update_mod_configuration()
+    
+    script_name = 'restart.sh' if shard == 'overworld' else 'restart2.sh'
     command = f"sh {SERVER_PATH}/bin/{script_name}"
-    output, error = run_command(command)
+    output, error = run_command(command, user='dst')
     if error:
         logger.error(f"启动{shard}服务器时出错: {error}")
         return False
@@ -279,9 +415,31 @@ def stop_server(shard):
     logger.info(f"正在停止{shard}服务器...")
     server_name = 'dst_server1' if shard == 'overworld' else 'dst_server2'
     command = f"screen -S {server_name} -X quit"
-    output, error = run_command(command)
+    output, error = run_command(command, user='dst')
     if error:
         logger.error(f"停止{shard}服务器时出错: {error}")
+        return False
+    return True
+
+def start_all_server():
+    logger.info("正在启动所有服务器...")
+    
+    # 更新MOD配置
+    update_mod_configuration()
+    
+    command = f"sh {SERVER_PATH}/bin/start_all.sh"
+    output, error = run_command(command, user='dst')
+    if error:
+        logger.error(f"启动所有服务器时出错: {error}")
+        return False
+    return True
+
+def stop_all_server():
+    logger.info(f"正在停止所有服务器...")
+    command = f"sh {SERVER_PATH}/bin/stop_all.sh"
+    output, error = run_command(command, user='dst')
+    if error:
+        logger.error(f"停止所有服务器时出错: {error}")
         return False
     return True
 
@@ -290,7 +448,7 @@ def update_server():
     stop_server('overworld')
     stop_server('caves')
     command = f"{STEAMCMD_PATH} +login anonymous +force_install_dir {SERVER_PATH} +app_update 343050 validate +quit"
-    output, error = run_command(command)
+    output, error = run_command(command, user='dst')
     if error:
         logger.error(f"更新服务器时出错: {error}")
         return False
@@ -300,7 +458,7 @@ def update_server():
 
 def check_server_status(shard):
     command = "screen -list"
-    output, error = run_command(command)
+    output, error = run_command(command, user='dst')
     if error:
         logger.error(f"检查服务器状态时出错: {error}")
         return False
@@ -316,7 +474,7 @@ def install():
         ("设置DST用户", setup_user),
         ("安装SteamCMD", install_steamcmd),
         ("安装DST服务器", install_dst_server),
-        ("配置服务器", configure_server),
+        ## ("配置服务器", configure_server),
         ("设置Shell脚本", setup_shell_scripts)
     ]
     
@@ -327,6 +485,20 @@ def install():
         logger.info(f"{step_name}完成")
     
     return jsonify({"状态": "成功", "消息": "服务器安装成功"}), 200
+
+
+@app.route('/mods', methods=['GET', 'POST', 'OPTIONS'])
+@require_api_key
+def manage_mods():
+    if request.method == 'GET':
+        mods = read_modoverrides()
+        return jsonify({"mods": mods}), 200
+    
+    elif request.method == 'POST':
+        new_mods = request.json.get('mods', {})
+        write_modoverrides(new_mods)
+        return jsonify({"状态": "成功", "消息": "MOD配置已更新"}), 200
+    
 
 @app.route('/start/<shard>', methods=['POST', 'OPTIONS'])
 @require_api_key
@@ -356,31 +528,34 @@ def update():
     else:
         return jsonify({"状态": "错误", "消息": "服务器更新失败"}), 500
 
+
+
 @app.route('/config', methods=['GET', 'POST', 'OPTIONS'])
 @require_api_key
 def config():
     if request.method == 'OPTIONS':
-        # 处理 CORS 预检请求
         response = app.make_default_options_response()
-        # 设置必要的 CORS 头部
         response.headers['Access-Control-Allow-Methods'] = 'GET,POST'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
 
     elif request.method == 'GET':
-            try:
-                cluster_config = configparser.ConfigParser()
-                cluster_config.read(f'{CONFIG_PATH}/cluster.ini')
-                
-                # 将 ConfigParser 对象转换为可序列化的字典
-                serializable_config = {
-                    section: dict(cluster_config[section]) 
-                    for section in cluster_config.sections()
-                }
-                
-                return jsonify(serializable_config), 200
-            except Exception as e:
-                return jsonify({"状态": "错误", "消息": f"获取配置时出错: {str(e)}"}), 500
+        try:
+            cluster_config = configparser.ConfigParser()
+            cluster_config.read(f'{CONFIG_PATH}/cluster.ini')
+            
+            # 将配置转换为中文标签
+            translated_config = {}
+            for section in cluster_config.sections():
+                translated_section = config_mapping.get(section, section)
+                translated_config[translated_section] = {}
+                for key, value in cluster_config[section].items():
+                    translated_key = config_mapping.get(key, key)
+                    translated_config[translated_section][translated_key] = value
+            
+            return jsonify(translated_config), 200
+        except Exception as e:
+            return jsonify({"状态": "错误", "消息": f"获取配置时出错: {str(e)}"}), 500
 
     elif request.method == 'POST':
         try:
@@ -392,10 +567,12 @@ def config():
             cluster_config.read(f'{CONFIG_PATH}/cluster.ini')
 
             for section, options in new_config.items():
-                if section not in cluster_config:
-                    cluster_config[section] = {}
+                original_section = reverse_mapping.get(section, section)
+                if original_section not in cluster_config:
+                    cluster_config[original_section] = {}
                 for key, value in options.items():
-                    cluster_config[section][key] = str(value)
+                    original_key = reverse_mapping.get(key, key)
+                    cluster_config[original_section][original_key] = str(value)
 
             with open(f'{CONFIG_PATH}/cluster.ini', 'w') as configfile:
                 cluster_config.write(configfile)
@@ -406,8 +583,8 @@ def config():
         except Exception as e:
             return jsonify({"状态": "错误", "消息": f"更新配置时出错: {str(e)}"}), 500
 
-    # 如果请求方法既不是 GET、POST 也不是 OPTIONS
     return jsonify({"状态": "错误", "消息": "不支持的 HTTP 方法"}), 405
+
 
 @app.route('/status', methods=['GET', 'OPTIONS'])
 @require_api_key
